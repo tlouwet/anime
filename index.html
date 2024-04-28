@@ -84,6 +84,7 @@ const Anime = ({lang}) => {
     };
 
     const searchSavedAnimes = (ids) => {
+	if (ids.length === 0) return;
         const query = `
         query ($ids: [Int]) {
             Page(page: 1, perPage: 100) {
