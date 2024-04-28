@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en-GB" style="min-height:100vh;">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Anime List - Tikay</title>
+    <link href="assets/styles.css" rel="stylesheet">
+	<script src="https://unpkg.com/axios@1.6.8/dist/axios.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.20.0/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script> 
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script> 
+    <meta name="theme-color" content="#050505">
+</head>
+<body class="dark-mode" style="min-height:100vh;transition:all .3s; overflow-y:scroll">
+<div id="root" class="position-relative"></div>
+<script rel="preload" type="text/babel" data-presets="react,stage-3">
+const container = document.getElementById("root");
+const root = ReactDOM.createRoot(container);
+
+const { useCallback, memo, useEffect, useRef, useState } = React;
+
+const lang = "en-GB";
+const options = { year: "numeric", month: "numeric", day: "numeric"};
+const url = "https://graphql.anilist.co";
+const widthCard = "13rem";
+
+const animeQuery = `id title { romaji english } coverImage { large } episodes popularity status startDate { year month day } nextAiringEpisode { episode timeUntilAiring } bannerImage `
+
+const Anime = ({lang}) => {
+    const [animeSearchData, setAnimeSearchData] = useState([]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [savedAnimeIds, setSavedAnimeIds] = useState(() => {
+        const savedAnimeIdsString = localStorage.getItem("savedAnimeIds");
+        return savedAnimeIdsString ? JSON.parse(savedAnimeIdsString) : [];
+    });
+    const [savedAnimes, setSavedAnimes] = useState([]);
+    const [sortApplied, setSortApplied] = useState("releasing");
+	const inputRef = useRef();
+	const savedAnimeSliderRef = useRef();
+
+    const searchAnime = () => {
+        if (!searchQuery) return;
+
+        const query = `
+		query ($search: String) {
+			Page(page: 1, perPage: 100) {
+				media(search: $search, type: ANIME, sort: START_DATE_DESC) {
+					${animeQuery}
+				}
+			}
+		}
+	`;
+
+
+        const variables = {
+            search: searchQuery,
+        };
+
+        const options = {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+            body: JSON.stringify({
+                query: query,
+                variables: variables,
+            }),
+        };
+
+        fetch(url, options)
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.data.Page) {
+                    setAnimeSearchData(data.data.Page.media);
+                } else {
+                    setAnimeSearchData([]);
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+            });
+    };
+
+    const searchSavedAnimes = (ids) => {
+        const query = `
+        query ($ids: [Int]) {
+            Page(page: 1, perPage: 100) {
+              media(id_in: $ids, type: ANIME, sort: START_DATE_DESC) {
+                ${animeQuery}
+              }
+            }
+          }
+        `;
+
+        const variables = { ids };
+
+        const options = {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+            body: JSON.stringify({
+                query: query,
+                variables: variables,
+            }),
+        };
+
+        fetch(url, options)
+            .then((response) => response.json())
+            .then((data) => {
+				
+                if (data.data.Page) {
+                    setSavedAnimes(data.data.Page.media);
+                } else {
+                    setSavedAnimes([]);
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+            });
+    };
+
+    const toggleAnime = useCallback((anime) => {
+        setSavedAnimeIds((prev) => {
+            const ids = prev.includes(anime.id)
+                ? prev.filter((each) => each !== anime.id)
+                : [...prev, anime.id];
+			localStorage.setItem("savedAnimeIds", JSON.stringify(ids));
+            return ids;
+        });
+
+		setSavedAnimes((prev) => {
+			const updatedAnimes = prev.some((each) => each.id === anime.id)
+				? prev.filter((each) => each.id !== anime.id)
+				: [...prev, anime];
+
+			return updatedAnimes;
+		});
+    }, []);
+	
+	useEffect(() => {
+		const handleKeyPress = (event) => {
+			if (event.key === 'Escape') {
+				setSearchQuery("");
+				setAnimeSearchData([]);
+				inputRef.current.blur();
+			}
+		};
+
+		document.addEventListener('keydown', handleKeyPress);
+		return () => document.removeEventListener('keydown', handleKeyPress);
+	}, []); 
+
+    useEffect(() => {
+		if (savedAnimeIds) searchSavedAnimes(savedAnimeIds);
+    }, []);
+	
+	const sortedSavedAnimes = () => {
+		const releaseSort = (a, b) => {
+			const statusOrder = {
+				"RELEASING": 0,
+				"YET_TO_RELEASE": 1,
+				"NOT_YET_RELEASED": 2,
+				"FINISHED": 3,
+			};
+			const statusComparison = statusOrder[a.status] - statusOrder[b.status];
+			if (statusComparison !== 0)  return statusComparison;
+			return startDateSort(a,b);
+		};
+    
+		const startDateSort = (a, b) => {
+		  const dateA = new Date(a.startDate.year, a.startDate.month - 1, a.startDate.day);
+		  const dateB = new Date(b.startDate.year, b.startDate.month - 1, b.startDate.day);
+		  if (dateA < dateB) return 1;
+		  if (dateA > dateB) return -1;
+		  return 0;
+		};
+    
+		const titleSort = (a, b) => a.title.romaji.localeCompare(b.title.romaji);
+		
+		if (sortApplied === "releasing") return [...savedAnimes].sort(releaseSort);
+		if (sortApplied === "start_date") return [...savedAnimes].sort(startDateSort);
+		if (sortApplied === "title") return [...savedAnimes].sort(titleSort);
+	};
+
+    return (
+		<div className="container anime">
+			<div 
+				className="card flex-1 p-1"
+				style={{boxShadow: "0 0 0.1rem 0rem var(--primary)"}}
+				>
+				<form
+					className="d-flex gap-2"
+					onSubmit={(e) => {
+						e.preventDefault();
+						searchAnime();
+					}}
+				>
+					<input
+						ref={inputRef}
+						type="text"
+						placeholder="Search by anime title"
+						value={searchQuery}
+						className="search-input flex-1"
+						onChange={(e) => {
+							if (e.target.value === "")
+								setAnimeSearchData([]);
+							setSearchQuery(e.target.value);
+						}}
+					/>
+					<button
+						className="btn btn-text btn-primary rounded"
+						type="submit"
+						
+					>
+						<Icon type="search" />
+					</button>
+					{searchQuery.length > 0 && 
+						<button 
+							className="btn btn-text btn-primary rounded"
+							title="Keybind : ESC"
+							onClick={() => {
+								setSearchQuery("");
+								setAnimeSearchData([]);
+								}
+							}
+							>
+					<Icon type="close" size="bigger" />
+				</button>}
+				</form>
+				
+				{searchQuery.length > 0 && animeSearchData.length > 0 && (
+					<ul
+						className="item-slider gap-2 bg-l-2 p-2 mb-1 tk-mini-scrollbar"
+						style={{ "--width": widthCard, overflow: "auto" }}
+					>
+						{animeSearchData.map((anime) => (
+							<AnimeCard
+								key={anime.id}
+								anime={anime}
+								toggleAnime={toggleAnime}
+								savedAnimeIds={savedAnimeIds}
+								savedAnimes={savedAnimes}
+								greenIfSaved={true}
+								lang={lang}
+							/>
+						))}
+					</ul>
+				)}
+			</div>
+			{searchQuery.length === 0 && savedAnimes.length > 0 && (
+				<section className="my-3">
+					<div className="d-flex gap-2 mb-2">
+						<h3 className="m-0">Favorites <span className="text-l-1">{savedAnimes.length}</span></h3>
+						<div className="d-block ms-auto rounded overflow-hidden">
+							<button
+								className="btn btn-primary h-100"
+								style={{borderRadius:"0.375rem 0 0 .375rem"}}
+								disabled={sortApplied === "releasing"}
+								onClick={() => setSortApplied("releasing")}
+								title="Sort By Next Release"
+							>
+								<Icon type="folder" />
+							</button>
+							<button
+								className="btn btn-primary h-100"
+								disabled={sortApplied === "start_date"}
+								onClick={() => setSortApplied("start_date")}
+								title="Sort By Start Date"
+							>
+								<Icon type="clock" />
+							</button>
+							<button
+								className="btn btn-primary h-100"
+								style={{borderRadius:"0 0.375rem .375rem 0"}}
+								disabled={sortApplied === "title"}
+								onClick={() => setSortApplied("title")}
+								title="Sort By Title (Romaji)"
+							>
+								<Icon type="title" />
+							</button>
+						</div>
+					</div>
+					<ul
+						className="item-slider gap-2 pt-0 tk-mini-scrollbar"
+						ref={savedAnimeSliderRef}
+						style={{
+							"--width": widthCard,
+							overflow: "auto",
+						}}
+					>
+						{sortedSavedAnimes().map((anime,index) => (
+							<AnimeCard
+								key={`${anime.id}-${index}`}
+								anime={anime}
+								toggleAnime={toggleAnime}
+								savedAnimeIds={savedAnimeIds}
+								savedAnimes={savedAnimes}
+								lang={lang}
+							/>
+						))}
+					</ul>
+				</section>
+			)}
+			<Trending 
+				toggleAnime={toggleAnime} 
+				savedAnimeIds={savedAnimeIds} 
+				savedAnimes={savedAnimes} 
+				searchQuery={searchQuery}
+				lang={lang}
+			/>
+		</div>
+    );
+};
+
+const Trending = ({ toggleAnime, savedAnimeIds,savedAnimes, searchQuery, lang }) => {
+	const [trendingAnimes, setTrendingAnimes] = useState([]);
+	const [showTab, setShowTab] = useState(false);
+	
+	const toggleTab = () => {
+		setShowTab(prev => !prev);
+	}
+
+    const searchTrendingAnimes = () => {
+        const query = `{ Page(page: 1, perPage: 20) { trending: media(type: ANIME, sort: TRENDING_DESC) { ${animeQuery} } } }`;
+
+        const options = {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+            body: JSON.stringify({
+                query: query
+            }),
+        };
+
+        fetch(url, options)
+            .then((response) => response.json())
+            .then((data) => {
+				
+                if (data.data.Page) {
+                    setTrendingAnimes(data.data.Page.trending);
+                } else {
+                    setTrendingAnimes([]);
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+            });
+    };
+
+
+
+	useEffect(() => {
+		searchTrendingAnimes();
+	}, []);
+
+
+
+	if (trendingAnimes.length === 0 || searchQuery.length > 0) return;
+	
+	return (
+		<section className="my-3">
+			<div className="d-flex gap-2 mb-2 align-items-center">
+				<button className="btn h3 p-0 m-0 w-100" onClick={toggleTab}style={{outline:"none"}}>
+					<span>Trending</span>
+					<Icon type="arrow-down" className="me-auto" style={{transform: showTab ? "rotate(180deg)" : "", transition: "transform .3s"}} />
+				</button>
+			</div>
+			<div className={`wrapper${showTab ? " is-open" : ""}`}>
+				<div className="inner">
+					<ul
+						className="item-slider gap-2 pt-0 tk-mini-scrollbar fade-in"
+						style={{ "--width": widthCard, overflow: "auto" }}
+					>
+						{trendingAnimes.map((anime) => (
+							<AnimeCard
+								key={anime.id}
+								anime={anime}
+								toggleAnime={toggleAnime}
+								savedAnimeIds={savedAnimeIds}
+								savedAnimes={savedAnimes}
+								greenIfSaved={true}
+								lang={lang}
+							/>
+						))}
+					</ul>
+				</div>
+			</div>
+		</section>
+	);
+};
+
+const AnimeCard = ({
+    anime,
+    toggleAnime,
+    savedAnimeIds = [],
+    savedAnimes = [],
+    greenIfSaved = false,
+	lang,
+}) => {
+    const [timeUntilAiring, setTimeUntilAiring] = useState(
+        anime.nextAiringEpisode ? anime.nextAiringEpisode.timeUntilAiring : null
+    );
+
+    const isSaved =
+        savedAnimeIds.includes(anime.id) ||
+        savedAnimes.some((savedAnime) => savedAnime.id === anime.id);
+
+    const formatTimeUntilAiring = (time) => {
+		const days = Math.floor(time / (3600 * 24));
+		const hours = Math.floor((time % (3600 * 24)) / 3600);
+		const minutes = Math.floor((time % 3600) / 60);
+		const seconds = Math.floor(time % 60);
+		let formattedTime = '';
+		if (days > 0) formattedTime += `${days}d `;
+		if (hours > 0 || days > 0) formattedTime += `${hours}h `;
+		formattedTime += `${minutes}m ${seconds}s`;
+		return formattedTime.trim();
+	};
+
+    useEffect(() => {
+        if (!timeUntilAiring) return;
+        const interval = setInterval(() => {
+            setTimeUntilAiring((prev) => prev - 1);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [anime.nextAiringEpisode]);
+
+	handleMouseEnter = () => {
+		if (anime.bannerImage) {
+			document.body.style.setProperty('--image', `url(${anime.bannerImage})`);
+			document.body.style.setProperty('--opacity', "");
+		}
+		else if (anime.coverImage) {
+			document.body.style.setProperty('--image', `url(${anime.coverImage.large})`);
+			document.body.style.setProperty('--opacity', "");
+		}
+		else {
+			document.body.style.setProperty('--image', "");
+			document.body.style.setProperty('--opacity', "0");
+		
+		}
+	};
+	
+	const formatReleaseDate = (startDate) => {
+		const date = new Date(startDate.year, startDate.month - 1, startDate.day);
+		return date.toLocaleDateString(lang, options);
+	};
+	
+	const getTitle = (isJP) => {
+		if (isJP) {
+			return anime.title.romaji || anime.title.english;
+		} else {
+			return anime.title.english || anime.title.romaji;
+		}
+	};
+
+    return (
+        <li key={anime.id} 
+			className="product-card card p-0"
+			onMouseEnter={handleMouseEnter}
+			>
+			<div className="grid-stack rounded overflow-hidden text-white">
+				<img
+					src={
+						anime.coverImage &&
+						(anime.coverImage.large || anime.coverImage.medium)
+					}
+					alt="Anime Cover"
+					style={{ height: "13rem", objectFit: "cover" }}
+				/>
+				<div style={{backgroundColor: "rgb(0 0 0 / 60%)"}}></div>
+				<div className="me-auto p-1 d-flex flex-column gap-1">
+					{anime.episodes && (
+						<small className="badge text-white p-1">{`${ anime.episodes > 1 ? `${anime.episodes} episodes` : "1 episode" }`}</small>
+					)}
+					{anime.popularity > 0 && (
+						<div className="badge d-flex align-items-center gap-2 p-1 mt-auto">
+							<Icon type="star" size="smaller" />
+							<small>{anime.popularity}</small>
+						</div>
+					)}
+				</div>
+				<div className="ms-auto mt-auto p-1 d-grid">
+					{greenIfSaved && isSaved && (
+						<div className="p-1 ms-auto">
+							<Icon type="heart" size="smaller" />
+						</div>
+					)}
+					{anime.nextAiringEpisode && (
+						<div className="badge p-1 d-flex gap-2 fw-semibold">
+							<p className="text-info">{formatTimeUntilAiring(timeUntilAiring)}</p>
+							<p>{`EP ${anime.nextAiringEpisode.episode}`}</p>
+						</div>
+					)}
+				</div>
+                <a
+                    className={`h6 p-1 text-center my-auto text-white`}
+					href={`https://anilist.co/anime/${anime.id}`}
+					target="_blank"
+					rel="noopener noreferrer"
+                    style={{ textWrap: "balance" }}
+                    title={getTitle(lang === "EN")}
+                >
+                    {getTitle(lang === "JP")}
+                </a>
+				<div className="ms-auto mb-auto p-1">
+					<button className={`btn btn-small rounded ${isSaved ? " btn-danger" : " btn-primary"}`} style={{opacity: "0"}} onClick={() => toggleAnime(anime)} >
+						{isSaved ? (
+							<Icon type="trash" size="smaller" />
+						) : (
+							<svg type="heart" size="smaller" />
+						)}
+					</button>
+				</div>
+			</div>
+            <div className="flex-1 d-flex flex-column p-2 gap-1">
+                <div className="d-flex small ">
+                    {anime.status === "RELEASING" && (
+                        <p className="text-success fw-semibold">Releasing</p>
+                    )}
+                    {anime.status === "NOT_YET_RELEASED" && (
+                        <p className="text-warning fw-semibold">
+                            Not yet released
+                        </p>
+                    )}
+                    {anime.status === "FINISHED" && (
+                        <p className="text-danger fw-semibold">Finished</p>
+                    )}
+                    <p className="ms-auto text-l-1">
+                        {anime.startDate.year &&
+                            formatReleaseDate(anime.startDate)}
+                    </p>
+                </div>
+            </div>
+        </li>
+    );
+};
+	
+	
+	
+	
+	
+	
+const settingsKey = "settings";
+
+const getDefaultSettings = {
+    darkMode: false,
+    inclTax: false,
+};
+
+const getSettings = () => {
+    const storedSettings = JSON.parse(localStorage.getItem(settingsKey));
+    return storedSettings || {};
+};
+
+const setSettings = (key, value) => {
+    const settings = getSettings();
+    if (value === getDefaultSettings[key]) {
+        delete settings[key];
+    } else {
+        settings[key] = value;
+    }
+    if (Object.keys(settings).length === 0) {
+        localStorage.removeItem(settingsKey);
+    } else {
+        localStorage.setItem(settingsKey, JSON.stringify(settings));
+    }
+};
+
+const getSettingsValue = (key) =>
+    getSettings()[key] || getDefaultSettings[key];
+
+const loadDarkMode = (mode) => {
+    document.body.classList.toggle("dark-mode", mode);
+    document.body.classList.toggle("light-mode", !mode);
+};
+
+loadDarkMode(getSettingsValue("darkMode"));
+
+const toggleDarkMode = () => {
+    const darkMode = !getSettingsValue("darkMode");
+    setSettings("darkMode", darkMode);
+    loadDarkMode(darkMode);
+};
+
+const handleCtrlD = (event) => {
+    if (event.ctrlKey || event.key !== "d") return;
+    const tagName = event.target.tagName;
+    const isTextInput =
+        ["INPUT", "TEXTAREA"].includes(tagName) &&
+        event.target.type !== "checkbox";
+    if (!isTextInput) {
+        event.preventDefault();
+        toggleDarkMode();
+    }
+};
+
+window.addEventListener("keydown", handleCtrlD);
+
+const DarkModeToggle = () => {
+    return (
+        <button className="btn btn-text btn-primary" title="Keybind: D" onClick={toggleDarkMode}>
+            <Icon type="moon" className="hide-light-mode fade-in" />
+            <Icon type="sun" className="hide-dark-mode fade-in" />
+        </button>
+    );
+};
+
+
+const Icon = ({ type, className = "", size, ...rest }) => {
+	if (rest.smaller || rest.small || rest.bigger || rest.biggest)
+		console.log("mistake in icon", type);
+
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			className={`tk-icon${size ? ` ${size}-icon` : ""}${
+				className ? ` ${className}` : ""
+			}`}
+			{...rest}
+		>
+			{(() => {
+				switch (type) {
+					case "moon":
+						return (
+							<path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278zM4.858 1.311A7.269 7.269 0 0 0 1.025 7.71c0 4.02 3.279 7.276 7.319 7.276a7.316 7.316 0 0 0 5.205-2.162c-.337.042-.68.063-1.029.063-4.61 0-8.343-3.714-8.343-8.29 0-1.167.242-2.278.681-3.286z"/>
+						);
+					case "sun":
+						return (
+							<path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z"/>
+						);
+					case "search":
+						return (
+							<path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
+						);
+					case "close":
+						return (
+							<path d="M4.6 4.6a.5.5 0 0 1 .8 0L8 7.3l2.6-2.7a.5.5 0 0 1 .8.8L8.7 8l2.7 2.6a.5.5 0 0 1-.8.8L8 8.7l-2.6 2.7a.5.5 0 0 1-.8-.8L7.3 8 4.6 5.4a.5.5 0 0 1 0-.8z" />
+						);
+					case "heart":
+						return (
+							<path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314"/>
+						);
+					case "trash":
+						return (
+							<path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314"/>
+						);
+					case "star":
+						return (
+							<path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
+						);
+					case "trash":
+						return (
+							<path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5Z" />
+						);
+					case "folder":
+						return (
+							<><path d="m.5 3 .04.87a2 2 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2m5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19q-.362.002-.683.12L1.5 2.98a1 1 0 0 1 1-.98z"/><path d="M13.5 9a.5.5 0 0 1 .5.5V11h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V12h-1.5a.5.5 0 0 1 0-1H13V9.5a.5.5 0 0 1 .5-.5"/></>
+						);
+					case "clock":
+						return (
+							<><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/></>
+						);
+					case "title":
+						return (
+							<path d="M12.258 3h-8.51l-.083 2.46h.479c.26-1.544.758-1.783 2.693-1.845l.424-.013v7.827c0 .663-.144.82-1.3.923v.52h4.082v-.52c-1.162-.103-1.306-.26-1.306-.923V3.602l.431.013c1.934.062 2.434.301 2.693 1.846h.479z"/>
+						);
+					case "arrow-down":
+						return (
+							<path d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z" />
+						);
+				}
+			})()}
+		</svg>
+	);
+};
+
+
+
+const Template = () => {
+  const [lang, setLang] = useState(
+    localStorage.getItem('lang') || 'EN'
+  );
+
+  const toggleLanguage = () => {
+    const newLanguage = lang === 'JP' ? 'EN' : 'JP';
+    setLang(newLanguage);
+    localStorage.setItem('lang', newLanguage);
+  };
+
+  return (
+	<div>
+		<div>
+			<div className="d-flex">
+				<div className="ms-auto d-flex">
+					<button
+					  onClick={toggleLanguage}
+					  className={`btn ${lang === 'JP' ? 'active' : ''}`}
+					>
+					  {lang === 'JP' ? 'JP' : 'EN'}
+					</button>
+					<DarkModeToggle />
+				</div>
+			</div>
+		</div>
+		<Anime lang={lang} />
+	</div>
+	);
+};
+	
+	
+	
+	
+	
+	
+root.render(<Template />);
+</script>
+</body>
+</html>
