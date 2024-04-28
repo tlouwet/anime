@@ -514,7 +514,7 @@ const AnimeCard = ({
                     {getTitle(lang === "JP")}
                 </a>
 				<div className="ms-auto mb-auto p-1">
-					<button className={`btn btn-small rounded ${isSaved ? " btn-danger" : " btn-primary"}`} style={{opacity: "0"}} onClick={() => toggleAnime(anime)} >
+					<button className={`btn btn-small rounded ${isSaved ? " btn-danger" : " btn-primary"}`} onClick={() => toggleAnime(anime)} >
 						{isSaved ? (
 							<Icon type="trash" size="smaller" />
 						) : (
