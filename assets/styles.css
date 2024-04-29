@@ -33,6 +33,13 @@ body:before {
 .anime .anime-card:hover button { 
 	opacity: 1 !important;
 }
+
+@media (hover: none) {
+    .anime .anime-card button {
+        opacity: 1 !important;
+    }
+}
+
 .anime .anime-card button {
 	transition: all .3s;
 }
