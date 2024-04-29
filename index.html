@@ -1,33 +1,32 @@
 <!doctype html>
 <html lang="en-GB" style="min-height:100vh;">
 <head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1">
-	<meta http-equiv="x-ua-compatible" content="ie=edge">
-	<title>Anime List</title>
-	<link href="assets/styles.css" rel="stylesheet">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Anime List - Tikay</title>
+    <link href="assets/styles.css" rel="stylesheet">
 	<script src="https://unpkg.com/axios@1.6.8/dist/axios.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.20.0/babel.min.js"></script>
-	<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script> 
-	<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script> 
-	<meta http-equiv='cache-control' content='no-cache'> 
-	<meta http-equiv='expires' content='0'> 
-	<meta http-equiv='pragma' content='no-cache'>
-	<meta name="theme-color" content="#050505">
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script> 
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script> 
+    <meta name="theme-color" content="#050505">
 </head>
 <body class="dark-mode" style="min-height:100vh;transition:all .3s; overflow-y:scroll">
 <div id="root" class="position-relative"></div>
 <script rel="preload" type="text/babel" data-presets="react,stage-3">
 const container = document.getElementById("root");
 const root = ReactDOM.createRoot(container);
-const { useCallback, memo, useEffect, useRef, useState } = React;
 
-const lang = "en-GB";
+const { useCallback, memo, useMemo, useEffect, useRef, useState } = React;
+
+const datelang = "en-GB";
 const options = { year: "numeric", month: "numeric", day: "numeric"};
 const url = "https://graphql.anilist.co";
 const widthCard = "13rem";
 
 const animeQuery = `id title { romaji english } coverImage { large } episodes popularity status startDate { year month day } nextAiringEpisode { episode timeUntilAiring } bannerImage `
+
 
 const Anime = ({lang}) => {
     const [animeSearchData, setAnimeSearchData] = useState([]);
@@ -40,24 +39,23 @@ const Anime = ({lang}) => {
     const [sortApplied, setSortApplied] = useState("releasing");
 	const inputRef = useRef();
 	const savedAnimeSliderRef = useRef();
+	const [errored, setErrored] = useState(false);
+	const [watchedAnimeObjects, setWatchedAnimeObjects] = useState(() => {
+		const savedWatchedAnimeObjects = localStorage.getItem('watchedAnimeObjects');
+		return savedWatchedAnimeObjects ? JSON.parse(savedWatchedAnimeObjects) : [];
+	});
+	const [showHiddenWatchedAnimes, setShowHiddenWatchedAnimes] = useState(false);
+
+	useEffect(() => {
+		localStorage.setItem('watchedAnimeObjects', JSON.stringify(watchedAnimeObjects));
+	}, [watchedAnimeObjects]);
 
     const searchAnime = () => {
         if (!searchQuery) return;
 
-        const query = `
-		query ($search: String) {
-			Page(page: 1, perPage: 100) {
-				media(search: $search, type: ANIME, sort: START_DATE_DESC) {
-					${animeQuery}
-				}
-			}
-		}
-	`;
+        const query = `query ($search: String) { Page(page: 1, perPage: 100) { media(search: $search, type: ANIME, sort: START_DATE_DESC) { ${animeQuery} } } }`;
 
-
-        const variables = {
-            search: searchQuery,
-        };
+        const variables = { search: searchQuery };
 
         const options = {
             method: "POST",
@@ -74,6 +72,7 @@ const Anime = ({lang}) => {
         fetch(url, options)
             .then((response) => response.json())
             .then((data) => {
+				setErrored(false);
                 if (data.data.Page) {
                     setAnimeSearchData(data.data.Page.media);
                 } else {
@@ -81,12 +80,12 @@ const Anime = ({lang}) => {
                 }
             })
             .catch((error) => {
-                console.error(error);
+				setErrored(true);
             });
     };
 
     const searchSavedAnimes = (ids) => {
-	if (ids.length === 0) return;
+		if (ids.length === 0) return;
         const query = `
         query ($ids: [Int]) {
             Page(page: 1, perPage: 100) {
@@ -114,7 +113,7 @@ const Anime = ({lang}) => {
         fetch(url, options)
             .then((response) => response.json())
             .then((data) => {
-				
+				setErrored(false);
                 if (data.data.Page) {
                     setSavedAnimes(data.data.Page.media);
                 } else {
@@ -122,7 +121,7 @@ const Anime = ({lang}) => {
                 }
             })
             .catch((error) => {
-                console.error(error);
+				setErrored(true);
             });
     };
 
@@ -140,11 +139,17 @@ const Anime = ({lang}) => {
 				? prev.filter((each) => each.id !== anime.id)
 				: [...prev, anime];
 
+			setWatchedAnimeObjects((prev) => {
+				const updatedWatchedAnimeObjects = prev.filter((obj) => obj.id !== anime.id);
+				return updatedWatchedAnimeObjects;
+			});
+
 			return updatedAnimes;
 		});
     }, []);
 	
 	useEffect(() => {
+		if (savedAnimeIds) searchSavedAnimes(savedAnimeIds);
 		const handleKeyPress = (event) => {
 			if (event.key === 'Escape') {
 				setSearchQuery("");
@@ -156,12 +161,8 @@ const Anime = ({lang}) => {
 		document.addEventListener('keydown', handleKeyPress);
 		return () => document.removeEventListener('keydown', handleKeyPress);
 	}, []); 
-
-    useEffect(() => {
-		if (savedAnimeIds) searchSavedAnimes(savedAnimeIds);
-    }, []);
 	
-	const sortedSavedAnimes = () => {
+	const sortedSavedAnimes = useMemo(() => {
 		const releaseSort = (a, b) => {
 			const statusOrder = {
 				"RELEASING": 0,
@@ -187,10 +188,91 @@ const Anime = ({lang}) => {
 		if (sortApplied === "releasing") return [...savedAnimes].sort(releaseSort);
 		if (sortApplied === "start_date") return [...savedAnimes].sort(startDateSort);
 		if (sortApplied === "title") return [...savedAnimes].sort(titleSort);
+	},[sortApplied,savedAnimes]);
+	
+	const watchedAnimes = useMemo(() => {
+		const watchedAnimeIds = watchedAnimeObjects.map(anime => anime.id);
+
+		const watchedAnimesWithEpisodes = savedAnimes.filter(anime => {
+			return watchedAnimeIds.includes(anime.id);
+		}).map(anime => {
+			const watchedAnimeObject = watchedAnimeObjects.find(obj => obj.id === anime.id);
+			if (!watchedAnimeObject) return null;
+			if ((anime.nextAiringEpisode?.episode - 1 <= watchedAnimeObject.watched || anime.status === "NOT_YET_RELEASED") && !showHiddenWatchedAnimes) return null;
+			
+			return { ...anime, watched: watchedAnimeObject.watched, url: watchedAnimeObject.url};
+		}).filter(anime => anime !== null);
+
+		// Sort by nextAiringEpisode?.episode first, then by watched episodes
+		watchedAnimesWithEpisodes.sort((a, b) => {
+			const episodeA = a.nextAiringEpisode?.timeUntilAiring || Infinity;
+			const episodeB = b.nextAiringEpisode?.timeUntilAiring || Infinity;
+
+			if (episodeA !== episodeB) return episodeA - episodeB;
+			
+            const statusOrder = {
+                "RELEASING": 0,
+                "FINISHED": 1,
+                "NOT_YET_RELEASED": 2
+            };
+            return statusOrder[a.status] - statusOrder[b.status];
+        });
+	
+		return watchedAnimesWithEpisodes;
+	}, [savedAnimes, watchedAnimeObjects,showHiddenWatchedAnimes]);
+
+	const updateEpisodesWatched = useCallback((id,episode) => {
+		const anime = savedAnimes.find(anime => anime.id === id);
+		
+		if ((anime.episodes <= episode && anime.status === "FINISHED" || episode > 9999999999)) {
+			setWatchedAnimeObjects(prev => prev.filter(obj => obj.id !== anime.id));
+			return;
+		}
+		
+		setWatchedAnimeObjects((prev) => {
+			const updatedWatchedAnimeObjects = prev.map((obj) => {
+				if (obj.id === id) {
+					return { ...obj, watched: episode };
+				}
+				return obj;
+			});
+			return updatedWatchedAnimeObjects;
+		});
+	}, [watchedAnimeObjects,savedAnimes]);
+	
+	const updateEpisodesURL = useCallback((id, newUrl) => {
+		setWatchedAnimeObjects((prev) => {
+			const updatedWatchedAnimeObjects = prev.map((obj) => {
+				if (obj.id === id) {
+					return { ...obj, url: newUrl };
+				}
+				return obj;
+			});
+			return updatedWatchedAnimeObjects;
+		});
+	}, [watchedAnimeObjects]);
+	
+	const addToWatchedAnime = (anime) => {
+		const isAnimeExists = watchedAnimeObjects.some(each => each.id === anime.id);
+		
+		if (!isAnimeExists) {
+			setWatchedAnimeObjects(prev => [...prev, { id: anime.id, watched: 0, url: "" }]);
+		}
 	};
 
     return (
 		<div className="container anime">
+			<button
+			onClick={() => {
+				console.clear()
+				console.log("searchQuery",searchQuery)
+				console.log("savedAnimeIds",savedAnimeIds)
+				console.log("sortApplied",sortApplied)
+				console.log("savedAnimes",savedAnimes)
+				console.log("errored",errored)
+				console.log("watchedAnimeObjects",watchedAnimeObjects)
+			}}>test</button>
+			{errored && (<h3 className="text-danger">Too many refreshes in short period of time</h3>)}
 			<div 
 				className="card flex-1 p-1"
 				style={{boxShadow: "0 0 0.1rem 0rem var(--primary)"}}
@@ -221,23 +303,24 @@ const Anime = ({lang}) => {
 					>
 						<Icon type="search" />
 					</button>
-					{searchQuery.length > 0 && 
+					{searchQuery.length > 0 && (
 						<button 
 							className="btn btn-text btn-primary rounded"
 							title="Keybind : ESC"
 							onClick={() => {
-								setSearchQuery("");
-								setAnimeSearchData([]);
-								}
-							}
+										setSearchQuery("");
+										setAnimeSearchData([]);
+										}
+									}
 							>
-					<Icon type="close" size="bigger" />
-				</button>}
+							<Icon type="close" size="bigger" />
+						</button>
+					)}
 				</form>
 				
 				{searchQuery.length > 0 && animeSearchData.length > 0 && (
 					<ul
-						className="item-slider gap-2 bg-l-2 p-2 mb-1 tk-mini-scrollbar"
+						className="item-slider m-0 gap-2 bg-l-2 p-2 mb-1 tk-mini-scrollbar"
 						style={{ "--width": widthCard, overflow: "auto" }}
 					>
 						{animeSearchData.map((anime) => (
@@ -246,7 +329,6 @@ const Anime = ({lang}) => {
 								anime={anime}
 								toggleAnime={toggleAnime}
 								savedAnimeIds={savedAnimeIds}
-								savedAnimes={savedAnimes}
 								greenIfSaved={true}
 								lang={lang}
 							/>
@@ -255,63 +337,110 @@ const Anime = ({lang}) => {
 				)}
 			</div>
 			{searchQuery.length === 0 && savedAnimes.length > 0 && (
-				<section className="my-3">
+			<section className="my-3 p-2 rounded" style={{backgroundColor: "rgb(0 0 0 / 10%)"}}>
 					<div className="d-flex gap-2 mb-2">
 						<h3 className="m-0">Favorites <span className="text-l-1">{savedAnimes.length}</span></h3>
-						<div className="d-block ms-auto rounded overflow-hidden">
-							<button
-								className="btn btn-primary h-100"
-								style={{borderRadius:"0.375rem 0 0 .375rem"}}
-								disabled={sortApplied === "releasing"}
-								onClick={() => setSortApplied("releasing")}
-								title="Sort By Next Release"
-							>
-								<Icon type="folder" />
-							</button>
-							<button
-								className="btn btn-primary h-100"
-								disabled={sortApplied === "start_date"}
-								onClick={() => setSortApplied("start_date")}
-								title="Sort By Start Date"
-							>
-								<Icon type="clock" />
-							</button>
-							<button
-								className="btn btn-primary h-100"
-								style={{borderRadius:"0 0.375rem .375rem 0"}}
-								disabled={sortApplied === "title"}
-								onClick={() => setSortApplied("title")}
-								title="Sort By Title (Romaji)"
-							>
-								<Icon type="title" />
-							</button>
-						</div>
+						{savedAnimes.length > 1 && (
+							<div className="d-block ms-auto rounded overflow-hidden">
+								<button
+									className="btn btn-primary h-100"
+									style={{borderRadius:"0.375rem 0 0 .375rem"}}
+									disabled={sortApplied === "releasing"}
+									onClick={() => setSortApplied("releasing")}
+									title="Sort By Next Release"
+								>
+									<Icon type="folder" />
+								</button>
+								<button
+									className="btn btn-primary h-100"
+									disabled={sortApplied === "start_date"}
+									onClick={() => setSortApplied("start_date")}
+									title="Sort By Start Date"
+								>
+									<Icon type="clock" />
+								</button>
+								<button
+									className="btn btn-primary h-100"
+									style={{borderRadius:"0 0.375rem .375rem 0"}}
+									disabled={sortApplied === "title"}
+									onClick={() => setSortApplied("title")}
+									title="Sort By Title (Romaji)"
+								>
+									<Icon type="title" />
+								</button>
+							</div>
+						)}
 					</div>
 					<ul
-						className="item-slider gap-2 pt-0 tk-mini-scrollbar"
+						className="item-slider m-0 gap-2 pt-0 tk-mini-scrollbar"
 						ref={savedAnimeSliderRef}
 						style={{
 							"--width": widthCard,
 							overflow: "auto",
 						}}
 					>
-						{sortedSavedAnimes().map((anime,index) => (
+						{sortedSavedAnimes.map((anime,index) => (
 							<AnimeCard
 								key={`${anime.id}-${index}`}
 								anime={anime}
 								toggleAnime={toggleAnime}
 								savedAnimeIds={savedAnimeIds}
-								savedAnimes={savedAnimes}
+								addToWatchedAnime={addToWatchedAnime}
+								watchedAnimeObjects={watchedAnimeObjects}
 								lang={lang}
 							/>
 						))}
 					</ul>
 				</section>
 			)}
+			{searchQuery.length === 0 && watchedAnimeObjects.length > 0 && (
+				<section className="my-3 rounded p-2" style={{backgroundColor: "rgb(0 0 0 / 10%)"}}>
+					<div className="d-flex gap-2">
+						<h3 className="m-0">Favorites To Watch <span className="text-l-1">{`${watchedAnimes.length}/${watchedAnimeObjects.length}`}</span></h3>
+						<div className="d-block ms-auto rounded overflow-hidden">
+							<button
+								className="btn btn-primary h-100"
+								style={{borderRadius:"0.375rem 0 0 .375rem"}}
+								disabled={showHiddenWatchedAnimes === false}
+								onClick={() => setShowHiddenWatchedAnimes(false)}
+								title="Hide Hidden Animes"
+							>
+								<Icon type="clock" />
+							</button>
+							<button
+								className="btn btn-primary h-100"
+								style={{borderRadius:"0 0.375rem .375rem 0"}}
+								disabled={showHiddenWatchedAnimes === true}
+								onClick={() => setShowHiddenWatchedAnimes(true)}
+								title="Show Hidden Animes"
+							>
+								<Icon type="eye" />
+							</button>
+						</div>
+					</div>
+					{watchedAnimes.length > 0 && (
+						<ul
+							className="item-slider m-0 gap-2 pt-0 tk-mini-scrollbar mt-2"
+							ref={savedAnimeSliderRef}
+							style={{ "--width": widthCard, overflow: "auto" }}
+						>
+							{watchedAnimes.map((anime,index) => (
+								<AnimeCard
+									key={`${anime.id}-${index}`}
+									anime={anime}
+									savedAnimeIds={savedAnimeIds}
+									updateEpisodesWatched={updateEpisodesWatched}
+									updateEpisodesURL={updateEpisodesURL}
+									lang={lang}
+								/>
+							))}
+						</ul>
+					)}
+				</section>
+			)}
 			<Trending 
 				toggleAnime={toggleAnime} 
 				savedAnimeIds={savedAnimeIds} 
-				savedAnimes={savedAnimes} 
 				searchQuery={searchQuery}
 				lang={lang}
 			/>
@@ -322,6 +451,7 @@ const Anime = ({lang}) => {
 const Trending = ({ toggleAnime, savedAnimeIds,savedAnimes, searchQuery, lang }) => {
 	const [trendingAnimes, setTrendingAnimes] = useState([]);
 	const [showTab, setShowTab] = useState(false);
+	const [errored, setErrored] = useState(false);
 	
 	const toggleTab = () => {
 		setShowTab(prev => !prev);
@@ -344,6 +474,7 @@ const Trending = ({ toggleAnime, savedAnimeIds,savedAnimes, searchQuery, lang })
         fetch(url, options)
             .then((response) => response.json())
             .then((data) => {
+				setErrored(false);
 				
                 if (data.data.Page) {
                     setTrendingAnimes(data.data.Page.trending);
@@ -352,7 +483,7 @@ const Trending = ({ toggleAnime, savedAnimeIds,savedAnimes, searchQuery, lang })
                 }
             })
             .catch((error) => {
-                console.error(error);
+				setErrored(true);
             });
     };
 
@@ -363,37 +494,39 @@ const Trending = ({ toggleAnime, savedAnimeIds,savedAnimes, searchQuery, lang })
 	}, []);
 
 
+	if (errored) return ( (<h3 className="text-danger">Too many refreshes in short period of time</h3>) );
 
-	if (trendingAnimes.length === 0 || searchQuery.length > 0) return;
+	if (searchQuery.length > 0) return;
 	
 	return (
-		<section className="my-3">
+		<section className="my-3 p-2 rounded" style={{backgroundColor: "rgb(0 0 0 / 10%)"}}>
 			<div className="d-flex gap-2 mb-2 align-items-center">
-				<button className="btn h3 p-0 m-0 w-100" onClick={toggleTab}style={{outline:"none"}}>
+				<button className="btn fw-semibold h3 p-0 m-0 w-100" onClick={toggleTab}style={{outline:"none"}}>
 					<span>Trending</span>
 					<Icon type="arrow-down" className="me-auto" style={{transform: showTab ? "rotate(180deg)" : "", transition: "transform .3s"}} />
 				</button>
 			</div>
-			<div className={`wrapper${showTab ? " is-open" : ""}`}>
-				<div className="inner">
-					<ul
-						className="item-slider gap-2 pt-0 tk-mini-scrollbar fade-in"
-						style={{ "--width": widthCard, overflow: "auto" }}
-					>
-						{trendingAnimes.map((anime) => (
-							<AnimeCard
-								key={anime.id}
-								anime={anime}
-								toggleAnime={toggleAnime}
-								savedAnimeIds={savedAnimeIds}
-								savedAnimes={savedAnimes}
-								greenIfSaved={true}
-								lang={lang}
-							/>
-						))}
-					</ul>
+			{trendingAnimes.length > 0 && (
+				<div className={`wrapper${showTab ? " is-open" : ""}`}>
+					<div className="inner">
+						<ul
+							className="item-slider m-0 gap-2 pt-0 tk-mini-scrollbar fade-in"
+							style={{ "--width": widthCard, overflow: "auto" }}
+						>
+							{trendingAnimes.map((anime) => (
+								<AnimeCard
+									key={anime.id}
+									anime={anime}
+									toggleAnime={toggleAnime}
+									savedAnimeIds={savedAnimeIds}
+									greenIfSaved={true}
+									lang={lang}
+								/>
+							))}
+						</ul>
+					</div>
 				</div>
-			</div>
+			)}
 		</section>
 	);
 };
@@ -402,17 +535,17 @@ const AnimeCard = ({
     anime,
     toggleAnime,
     savedAnimeIds = [],
-    savedAnimes = [],
     greenIfSaved = false,
+	updateEpisodesWatched,
+	updateEpisodesURL,
+	addToWatchedAnime,
+	watchedAnimeObjects,
 	lang,
 }) => {
-    const [timeUntilAiring, setTimeUntilAiring] = useState(
-        anime.nextAiringEpisode ? anime.nextAiringEpisode.timeUntilAiring : null
-    );
-
-    const isSaved =
-        savedAnimeIds.includes(anime.id) ||
-        savedAnimes.some((savedAnime) => savedAnime.id === anime.id);
+    const [timeUntilAiring, setTimeUntilAiring] = useState( anime.nextAiringEpisode ? anime.nextAiringEpisode.timeUntilAiring : null );
+	const [showEdit, setShowEdit] = useState(false);
+    const isSaved = savedAnimeIds.includes(anime.id);
+	const inputRef = useRef(null);
 
     const formatTimeUntilAiring = (time) => {
 		const days = Math.floor(time / (3600 * 24));
@@ -451,10 +584,11 @@ const AnimeCard = ({
 		}
 	};
 	
-	const formatReleaseDate = (startDate) => {
+	const formatReleaseDate = useMemo(() => {
+		const startDate = anime.startDate;
 		const date = new Date(startDate.year, startDate.month - 1, startDate.day);
-		return date.toLocaleDateString(lang, options);
-	};
+		return date.toLocaleDateString(datelang, options);
+	},[anime.startDate]);
 	
 	const getTitle = (isJP) => {
 		if (isJP) {
@@ -466,23 +600,32 @@ const AnimeCard = ({
 
     return (
         <li key={anime.id} 
-			className="product-card card p-0"
+			className="anime-card card p-0 fade-in"
 			onMouseEnter={handleMouseEnter}
 			>
 			<div className="grid-stack rounded overflow-hidden text-white">
 				<img
-					src={
-						anime.coverImage &&
-						(anime.coverImage.large || anime.coverImage.medium)
-					}
+					src={anime.coverImage && (anime.coverImage.large || anime.coverImage.medium)}
 					alt="Anime Cover"
-					style={{ height: "13rem", objectFit: "cover" }}
+					style={{ height: anime.watched >= 0 ? "16rem" : "13rem", objectFit: "cover" }}
 				/>
 				<div style={{backgroundColor: "rgb(0 0 0 / 60%)"}}></div>
-				<div className="me-auto p-1 d-flex flex-column gap-1">
-					{anime.episodes && (
-						<small className="badge text-white p-1">{`${ anime.episodes > 1 ? `${anime.episodes} episodes` : "1 episode" }`}</small>
-					)}
+				<div className="p-1 d-flex flex-column gap-1">
+					<small className="badge d-flex text-white p-1 align-items-center">
+						{anime.watched >= 0 && (
+							<span>{`Watched ${anime.watched}${anime.episodes ? "/" : ""}`}</span>
+						)}
+						{anime.episodes && (
+							<span>{`${ anime.episodes > 1 ? `${anime.episodes} episodes` : "1 episode" }`}</span>
+						)}
+						{updateEpisodesWatched && (
+							<button 
+								className="btn btn-text btn-info p-1 ms-auto"
+								onClick={() => setShowEdit(prev => !prev)}>
+								Edit
+							</button>
+						)}
+					</small>
 					{anime.popularity > 0 && (
 						<div className="badge d-flex align-items-center gap-2 p-1 mt-auto">
 							<Icon type="star" size="smaller" />
@@ -505,43 +648,123 @@ const AnimeCard = ({
 				</div>
                 <a
                     className={`h6 p-1 text-center my-auto text-white`}
-					href={`https://anilist.co/anime/${anime.id}`}
+					href={anime.url ? anime.url : `https://anilist.co/anime/${anime.id}`}
 					target="_blank"
 					rel="noopener noreferrer"
                     style={{ textWrap: "balance" }}
-                    title={getTitle(lang === "EN")}
+					onClick={() => {
+						const newValue = anime.watched + 1 || 0;
+						const max = anime.nextAiringEpisode?.episode - 1 || anime.episodes;
+						const updatedValue = Math.min(newValue, max);
+						if (updateEpisodesWatched) updateEpisodesWatched(anime.id, updatedValue)
+					}}
                 >
-                    {getTitle(lang === "JP")}
+                    <div className="mb-2">{getTitle(lang === "JP")}</div>
+					{(anime.watched >= 0) && (anime.watched < (anime.nextAiringEpisode?.episode - 1 || anime.episodes)) && (<small className="text-info">{`Episode ${anime.watched + 1}`}</small>)}
                 </a>
-				<div className="ms-auto mb-auto p-1">
-					<button className={`btn btn-small rounded ${isSaved ? " btn-danger" : " btn-primary"}`} onClick={() => toggleAnime(anime)} >
-						{isSaved ? (
-							<Icon type="trash" size="smaller" />
-						) : (
+				<div className="ms-auto mb-auto p-1 d-flex flex-column gap-2">
+					{toggleAnime && (
+						<button className={`btn btn-small rounded ${isSaved ? " btn-danger" : " btn-primary"}`} style={{opacity: "0"}} onClick={() => toggleAnime(anime)} >
 							<Icon type="heart" size="smaller" />
-						)}
-					</button>
+						</button>
+					)}
+					{(watchedAnimeObjects && !watchedAnimeObjects.some(animeObj => animeObj.id === anime.id)) && (
+						<button className={`btn btn-small rounded btn-primary`} style={{opacity: "0"}} title="Add to To Watch list" onClick={() => addToWatchedAnime(anime)} >
+							<Icon type="eye" size="smaller" />
+						</button>
+					)}
 				</div>
+				{showEdit && (
+					<div className="d-flex flex-column gap-2 p-1 fade-in" style={{backgroundColor: "rgb(0 0 0 / 75%)", backdropFilter: "blur(3px)"}}>
+						<button className="btn btn-text text-white text-h-2 ms-auto p-0"
+							onClick={() => setShowEdit(false)}>
+							<Icon type="close" size="bigger" />
+						</button>
+						<small className="mt-auto mx-auto text-l-1">Currently watched</small>
+						<div className="d-flex p-1 bg-l-2 rounded mb-auto" style={{backgroundColor: "rgb(0 0 0 / 50%)"}}>
+							<button 
+								className="btn btn-2 btn-small rounded opacity-100"
+								style={{backgroundColor: "rgb(0 0 0 / 50%)"}}
+								disabled={anime.watched === 0}
+								onClick={() => {
+									const newValue = anime.watched - 1 || 0;
+									const updatedValue = Math.max(0, newValue);
+									inputRef.current.value = updatedValue;
+									updateEpisodesWatched(anime.id, updatedValue);
+								}}>
+								<Icon type="minus" size="small" />
+							</button>
+							<input 
+								ref={inputRef}
+								className="hide-arrows flex-1"
+								style={{textAlign:"center",width:"3rem"}}
+								type="number"
+								defaultValue={anime.watched}
+								onChange={(e) => {
+									const newValue = parseInt(e.target.value) || 0;
+									const max = anime.nextAiringEpisode?.episode - 1 || anime.episodes;
+									const updatedValue = Math.min(Math.max(0, newValue), max);
+									e.target.value = updatedValue;
+								}}
+								onBlur={(e) => {
+									const newValue = parseInt(e.target.value) || 0;
+									const max = anime.nextAiringEpisode?.episode - 1 || anime.episodes;
+									const updatedValue = Math.min(Math.max(0, newValue), max);
+									updateEpisodesWatched(anime.id, updatedValue);
+								}} />
+							<button 
+								className="btn btn-2 btn-small rounded"
+								style={{backgroundColor: "rgb(0 0 0 / 50%)"}}
+								onClick={() => {
+									const newValue = anime.watched + 1 || 0;
+									const max = anime.nextAiringEpisode?.episode - 1 || anime.episodes;
+									const updatedValue = Math.min(newValue, max);
+									inputRef.current.value = updatedValue;
+									updateEpisodesWatched(anime.id, updatedValue)
+								}}>
+								<Icon type="plus" size="small" />
+							</button>
+						</div>
+						<small className="mt-auto mx-auto text-l-1">Anime URL</small>
+						<div className="d-flex p-1 bg-l-2 rounded mb-auto" style={{backgroundColor: "rgb(0 0 0 / 50%)"}}>
+							<input
+								className="small flex-1"
+								value={anime.url}
+								onChange={(e) => updateEpisodesURL(anime.id,e.target.value)}
+							/>
+						</div>
+						{(anime.nextAiringEpisode || anime.episodes) && (
+							<button
+								className="btn btn-text btn-danger rounded mt-auto"
+								onClick={() => updateEpisodesWatched(anime.id, 99999999999)}>
+								<Icon type="trash" size="smaller" />
+								<span>Remove</span>
+							</button>
+						)}
+					</div>
+				)}
 			</div>
-            <div className="flex-1 d-flex flex-column p-2 gap-1">
-                <div className="d-flex small ">
-                    {anime.status === "RELEASING" && (
-                        <p className="text-success fw-semibold">Releasing</p>
-                    )}
-                    {anime.status === "NOT_YET_RELEASED" && (
-                        <p className="text-warning fw-semibold">
-                            Not yet released
-                        </p>
-                    )}
-                    {anime.status === "FINISHED" && (
-                        <p className="text-danger fw-semibold">Finished</p>
-                    )}
-                    <p className="ms-auto text-l-1">
-                        {anime.startDate.year &&
-                            formatReleaseDate(anime.startDate)}
-                    </p>
-                </div>
-            </div>
+            {!updateEpisodesWatched && (
+				<div className="p-2">
+					<div className="d-flex small ">
+						{anime.status === "RELEASING" && (
+							<p className="text-success fw-semibold">Releasing</p>
+						)}
+						{anime.status === "NOT_YET_RELEASED" && (
+							<p className="text-warning fw-semibold">
+								Not yet released
+							</p>
+						)}
+						{anime.status === "FINISHED" && (
+							<p className="text-danger fw-semibold">Finished</p>
+						)}
+						<p className="ms-auto text-l-1">
+							{anime.startDate.year &&
+								(formatReleaseDate)}
+						</p>
+					</div>
+				</div>
+			)}
         </li>
     );
 };
@@ -618,9 +841,6 @@ const DarkModeToggle = () => {
 
 
 const Icon = ({ type, className = "", size, ...rest }) => {
-	if (rest.smaller || rest.small || rest.bigger || rest.biggest)
-		console.log("mistake in icon", type);
-
 	return (
 		<svg
 			viewBox="0 0 16 16"
@@ -651,10 +871,6 @@ const Icon = ({ type, className = "", size, ...rest }) => {
 						return (
 							<path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314"/>
 						);
-					case "trash":
-						return (
-							<path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314"/>
-						);
 					case "star":
 						return (
 							<path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
@@ -678,6 +894,19 @@ const Icon = ({ type, className = "", size, ...rest }) => {
 					case "arrow-down":
 						return (
 							<path d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z" />
+						);
+					case "plus":
+						return (
+							<path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+						);
+					case "minus":
+						return (
+							<path d="M2 8a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8" />
+						);
+					case "eye":
+						return (
+							<><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8m8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/></>
+
 						);
 				}
 			})()}
