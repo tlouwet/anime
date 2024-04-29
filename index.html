@@ -323,7 +323,7 @@ const Anime = ({lang}) => {
 				{searchQuery.length > 0 && animeSearchData.length > 0 && (
 					<ul
 						className="item-slider m-0 gap-2 bg-l-2 p-2 mb-1 tk-mini-scrollbar"
-						style={{ "--width": widthCard, overflow: "auto" }}
+						style={{ "--width": widthCard, overflowX: "auto" }}
 					>
 						{animeSearchData.map((anime) => (
 							<AnimeCard
