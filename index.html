@@ -735,14 +735,12 @@ const AnimeCard = ({
 								onChange={(e) => updateEpisodesURL(anime.id,e.target.value)}
 							/>
 						</div>
-						{(anime.nextAiringEpisode || anime.episodes) && (
-							<button
-								className="btn btn-text btn-danger rounded mt-auto"
-								onClick={() => updateEpisodesWatched(anime.id, 99999999999)}>
-								<Icon type="trash" size="smaller" />
-								<span>Remove</span>
-							</button>
-						)}
+						<button
+							className="btn btn-text btn-danger rounded mt-auto"
+							onClick={() => updateEpisodesWatched(anime.id, 99999999999)}>
+							<Icon type="trash" size="smaller" />
+							<span>Remove</span>
+						</button>
 					</div>
 				)}
 			</div>
