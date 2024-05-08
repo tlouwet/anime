@@ -264,6 +264,7 @@ const Anime = ({lang}) => {
 
     return (
 		<div className="container anime">
+			<a href="https://track-your-anime.vercel.app/watchlist">Switch to new version</a>
 			{/*<button
 			onClick={() => {
 				console.clear()
@@ -275,6 +276,7 @@ const Anime = ({lang}) => {
 				console.log("watchedAnimeObjects",watchedAnimeObjects)
 			}}>test</button>*/}
 			{errored && (<h3 className="text-danger">Too many refreshes in short period of time</h3>)}
+			
 			<div 
 				className="card flex-1 p-1"
 				style={{boxShadow: "0 0 0.1rem 0rem var(--primary)"}}
